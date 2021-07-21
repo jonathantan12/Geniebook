@@ -23,13 +23,13 @@ def update_effective_students():
             '''
 
     # GET FROM GENIEBOOK.WAREHOUSE DATABASE
-    engine = create_engine('mysql+pymysql://product.support:T7FgHDbq6apgmGKSFVmDsVRq4DJW5kar@10.148.15.210/geniebook', pool_recycle=3600)
+    engine = create_engine('mysql+mysqldb://product.support:T7FgHDbq6apgmGKSFVmDsVRq4DJW5kar@10.148.15.210/geniebook', pool_recycle=3600)
     dbConnection = engine.connect()
 
     results = pandas.read_sql_query(query, dbConnection) 
     print(results)
 
-    engine2 = create_engine('mysql+pymysql://product.support:T7FgHDbq6apgmGKSFVmDsVRq4DJW5kar@10.148.15.210/warehouse', pool_recycle=3600)
+    engine2 = create_engine('mysql+mysqldb://product.support:T7FgHDbq6apgmGKSFVmDsVRq4DJW5kar@10.148.15.210/warehouse', pool_recycle=3600)
     dbConnection2 = engine2.connect()
 
     #IMPORT INTO GENIEBOOK.WAREHOUSE DATABASE
@@ -60,7 +60,7 @@ def delete_data_tswa():
         end = str(date_change_end) + " 00:00:00"
 
     #CONNECTING TO ENGINE
-    engine = create_engine('mysql+pymysql://product.support:T7FgHDbq6apgmGKSFVmDsVRq4DJW5kar@10.148.15.210/warehouse', pool_recycle=3600)
+    engine = create_engine('mysql+mysqldb://product.support:T7FgHDbq6apgmGKSFVmDsVRq4DJW5kar@10.148.15.210/warehouse', pool_recycle=3600)
     dbConnection = engine.connect()
     # ------------------------------------------------------------------------------------------------------------------------------------
     # DELETE FROM t_student_worksheet_answer
@@ -103,13 +103,13 @@ def update_data_tswa():
             '''
         
     # GET FROM GENIEBOOK.WAREHOUSE DATABASE
-    engine = create_engine('mysql+pymysql://product.support:T7FgHDbq6apgmGKSFVmDsVRq4DJW5kar@10.148.15.210/geniebook', pool_recycle=3600)
+    engine = create_engine('mysql+mysqldb://product.support:T7FgHDbq6apgmGKSFVmDsVRq4DJW5kar@10.148.15.210/geniebook', pool_recycle=3600)
     dbConnection = engine.connect()
 
     results = pandas.read_sql_query(query, dbConnection, params=[start, end]) 
     # print(results)
     
-    engine2 = create_engine('mysql+pymysql://product.support:T7FgHDbq6apgmGKSFVmDsVRq4DJW5kar@10.148.15.210/warehouse', pool_recycle=3600)
+    engine2 = create_engine('mysql+mysqldb://product.support:T7FgHDbq6apgmGKSFVmDsVRq4DJW5kar@10.148.15.210/warehouse', pool_recycle=3600)
     dbConnection2 = engine2.connect()
     #IMPORT INTO GENIEBOOK.WAREHOUSE DATABASE
     results.to_sql(name = table_name, con = dbConnection2, schema=None, if_exists='append', index=None, index_label=None, chunksize=10000, dtype=None, method=None)
@@ -139,7 +139,7 @@ def delete_data():
         end = str(date_change_end) + " 00:00:00"
 
     #CONNECTING TO ENGINE
-    engine = create_engine('mysql+pymysql://product.support:T7FgHDbq6apgmGKSFVmDsVRq4DJW5kar@10.148.15.210/warehouse', pool_recycle=3600)
+    engine = create_engine('mysql+mysqldb://product.support:T7FgHDbq6apgmGKSFVmDsVRq4DJW5kar@10.148.15.210/warehouse', pool_recycle=3600)
     dbConnection = engine.connect()
     # ------------------------------------------------------------------------------------------------------------------------------------
     # DELETE FROM t_geniesmart_dau_gt0
@@ -257,8 +257,49 @@ def my_func():
             '''
 
     results2 = pandas.read_sql_query(query2, dbConnection) 
-    # print(results2)
 
+    # MERGE t_student_worksheet_answer WITH t_student_effective_date_w_amount
+    results = results.merge(results2, how='inner', on='student_id')
+    
+    # ------------------------------------------------------------------------------------------------------------------------------------
+    # Query table geniebook.wp_users
+    # ------------------------------------------------------------------------------------------------------------------------------------
+    engine2 = create_engine('mysql+pymysql://product.support:T7FgHDbq6apgmGKSFVmDsVRq4DJW5kar@10.148.15.210/geniebook', pool_recycle=3600)
+    dbConnection2 = engine2.connect()
+
+    query4 = '''
+            SELECT *
+            FROM wp_users;
+            '''
+
+    results4 = pandas.read_sql_query(query4, dbConnection2)
+    results4 = results4[results4['user_type'] == 'S']
+    # DROP UNNECESSARY COLUMNS - KEEP user_related_id, user_type, country_id
+    results4 = results4[['user_related_id', 'user_type', 'country_id']]
+
+    results = results.merge(results4, how='inner', left_on='student_id', right_on='user_related_id')
+
+    # ------------------------------------------------------------------------------------------------------------------------------------
+    # Query table geniebook.countries
+    # ------------------------------------------------------------------------------------------------------------------------------------
+    query5 = '''
+            SELECT *
+            FROM countries;
+            '''
+
+    results5 = pandas.read_sql_query(query5, dbConnection2)
+
+    # DROP UNNECESSARY COLUMNS - KEEP country_id, code, name
+    results5 = results5[['country_id', 'code', 'name']]
+
+    results = results.merge(results5, how='inner', left_on='country_id', right_on='country_id')
+    results = results.drop(columns=['user_related_id'])
+    # print(results)
+
+    # CREATE NEW TABLE
+    table_name8 = 't_geniesmart'
+    results.to_sql(name = table_name8, con = dbConnection, schema=None, if_exists='append', index=None, index_label=None, chunksize=10000, dtype=None, method=None)
+    
     # ------------------------------------------------------------------------------------------------------------------------------------
     # TO FIND OUT THE DAU (MARKS >= 1)
     # Dataframe: df
@@ -267,18 +308,16 @@ def my_func():
     table_name = 't_geniesmart_dau_gt0'
 
     df = results
-    df = df.merge(results2, how='inner', on='student_id')
     df['effective_date'] = pd.to_datetime(df['effective_date'])
     df = df[df['date_submitted'] >= df['effective_date']]  
     
     df['date_submitted'] = df['date_submitted'].dt.date
+  
+    # TO FIND NUMBER OF USERS PER DAY
+    df = df.groupby(['date_submitted', 'name']).student_id.nunique().reset_index(name='number_of_users')
     # print(df)
 
-    # TO FIND NUMBER OF USERS PER YEAR MONTH
-    df = df.groupby(['date_submitted']).student_id.nunique().reset_index(name='number_of_users')
-    # print(df)
-
-    df.to_sql(name = table_name, con = engine, schema=None, if_exists='append', index=None, index_label=None, chunksize=10000, dtype=None, method=None)
+    df.to_sql(name = table_name, con = dbConnection, schema=None, if_exists='append', index=None, index_label=None, chunksize=10000, dtype=None, method=None)
     # ------------------------------------------------------------------------------------------------------------------------------------
     # TO FIND OUT THE DAU (MARKS >= 20)
     # Dataframe: df2
@@ -287,23 +326,21 @@ def my_func():
     table_name2 = 't_geniesmart_dau_gt19'
 
     df2 = results
-    df2 = df2.merge(results2, how='inner', on='student_id')
     df2['effective_date'] = pd.to_datetime(df2['effective_date'])
     df2 = df2[df2['date_submitted'] >= df2['effective_date']]  
     
     df2['date_submitted'] = df2['date_submitted'].dt.date
-    # print(df2)
 
     # TO FIND THE INDIVIDUAL STUDENT MARKS
-    df2 = df2.groupby(['student_id', 'date_submitted']).max_marks.sum().reset_index(name='total_marks')
+    df2 = df2.groupby(['student_id', 'date_submitted', 'name']).max_marks.sum().reset_index(name='total_marks')
     df2 = df2[df2['total_marks'] >= 20] #THIS LINE OF CODE HELPS TO FILTER OUT THE STUDENTS THAT HAVE TOTAL MARKS >= 20
+
+    # TO FIND NUMBER OF USERS PER DAY
+    df2 = df2.groupby(['date_submitted', 'name']).student_id.nunique().reset_index(name='number_of_users')
+    
     # print(df2)
 
-    # TO FIND NUMBER OF USERS PER YEAR MONTH
-    df2 = df2.groupby(['date_submitted']).student_id.nunique().reset_index(name='number_of_users')
-    # print(df2)
-
-    df2.to_sql(name = table_name2, con = engine, schema=None, if_exists='append', index=None, index_label=None, chunksize=10000, dtype=None, method=None)
+    df2.to_sql(name = table_name2, con = dbConnection, schema=None, if_exists='append', index=None, index_label=None, chunksize=10000, dtype=None, method=None)
     # ------------------------------------------------------------------------------------------------------------------------------------
     # TO FIND OUT THE WAU (MARKS >= 1)
     # Dataframe: df3
@@ -312,21 +349,25 @@ def my_func():
     table_name3 = 't_geniesmart_wau_gt0'
    
     df3 = results
-    df3 = df3.merge(results2, how='inner', on='student_id')
     df3['effective_date'] = pd.to_datetime(df3['effective_date'])
     df3 = df3[df3['date_submitted'] >= df3['effective_date']]  
     
-    # df['date_submitted'] = pd.to_datetime(df['date_submitted'],format='%Y-%m-%d')
     df3['week_number'] = df3['date_submitted'].dt.isocalendar().week
     df3['year'] = df3['date_submitted'].dt.isocalendar().year 
-    # print(df3)
+    df3['year_week'] = df3['date_submitted'].dt.strftime('%Y-%U') # JUST ADDED CODE
 
     # TO FIND NUMBER OF USERS PER YEAR WEEK
-    df3 = df3.groupby(['student_id', 'week_number', 'year']).agg({'max_marks' : 'sum', 'date_submitted' : 'min'}).reset_index().rename(columns={'max_marks': 'total_marks', 'date_submitted' : 'earliest_date_submitted'})
+    # USING THIS
+    df3 = df3.groupby(['student_id', 'year_week', 'name']).agg({'max_marks' : 'sum', 'date_submitted' : 'min'}).reset_index().rename(columns={'max_marks': 'total_marks', 'date_submitted' : 'earliest_date_submitted'})
     # df3 = df3.groupby(['student_id', 'week_number', 'year']).max_marks.sum().reset_index(name='total_marks')
-    # print(df3)
+    # df3 = df3.groupby(['week_number', 'year', 'name']).student_id.nunique().reset_index(name='number_of_students')
+    # df3 = df3.groupby(['week_number', 'year', 'name']).agg({'student_id' : 'nunique', 'earliest_date_submitted' : 'min'}).reset_index().rename(columns={'student_id' : 'number_of_students', 'earliest_date_submitted' : 'date'})
+    
+    df3['earliest_date_submitted'] = df3['earliest_date_submitted'].dt.date
 
-    df3.to_sql(name = table_name3, con = engine, schema=None, if_exists='append', index=None, index_label=None, chunksize=10000, dtype=None, method=None)
+    print(df3)
+
+    df3.to_sql(name = table_name3, con = dbConnection, schema=None, if_exists='append', index=None, index_label=None, chunksize=10000, dtype=None, method=None)
 
     # ------------------------------------------------------------------------------------------------------------------------------------
     # TO FIND OUT THE WAU (MARKS >= 20)
@@ -336,26 +377,27 @@ def my_func():
     table_name4 = 't_geniesmart_wau_gt19'
 
     df4 = results
-    df4 = df4.merge(results2, how='inner', on='student_id')
     df4['effective_date'] = pd.to_datetime(df4['effective_date'])
     df4 = df4[df4['date_submitted'] >= df4['effective_date']]  
     
     # df['date_submitted'] = pd.to_datetime(df['date_submitted'],format='%Y-%m-%d')
-    df4['week_number'] = df4['date_submitted'].dt.isocalendar().week
-    df4['year'] = df4['date_submitted'].dt.isocalendar().year 
-    # print(df4)
-
+    # df4['week_number'] = df4['date_submitted'].dt.isocalendar().week
+    # df4['year'] = df4['date_submitted'].dt.isocalendar().year 
+    df4['year_week'] = df4['date_submitted'].dt.strftime('%Y-%U')
+    
     # TO FIND THE INDIVIDUAL STUDENT MARKS
-    df4 = df4.groupby(['student_id', 'week_number', 'year']).agg({'max_marks' : 'sum', 'date_submitted' : 'min'}).reset_index().rename(columns={'max_marks': 'total_marks', 'date_submitted' : 'earliest_date_submitted' })
+    # USING THIS
+    df4 = df4.groupby(['student_id', 'year_week', 'name']).agg({'max_marks' : 'sum', 'date_submitted' : 'min'}).reset_index().rename(columns={'max_marks': 'total_marks', 'date_submitted' : 'earliest_date_submitted' })
+    df4['earliest_date_submitted'] = df4['earliest_date_submitted'].dt.date
     # df4 = df4.groupby(['student_id', 'week_number', 'year']).max_marks.sum().reset_index(name='total_marks')
+    
+    # USING THIS
     df4 = df4[df4['total_marks'] >= 20] #THIS LINE OF CODE HELPS TO FILTER OUT THE STUDENTS THAT HAVE TOTAL MARKS >= 20
-    # print(df4)
 
-    # TO FIND NUMBER OF USERS PER YEAR WEEK
-    # df4 = df4.groupby(['week_number', 'year']).student_id.nunique().reset_index(name='number_of_users')
-    # print(df4)
+    # df4 = df4.groupby(['week_number', 'year', 'name']).agg({'student_id' : 'nunique', 'earliest_date_submitted' : 'min'}).reset_index().rename(columns={'student_id' : 'number_of_students', 'earliest_date_submitted' : 'date'})
+    print(df4)
 
-    df4.to_sql(name = table_name4, con = engine, schema=None, if_exists='append', index=None, index_label=None, chunksize=10000, dtype=None, method=None)
+    df4.to_sql(name = table_name4, con = dbConnection, schema=None, if_exists='append', index=None, index_label=None, chunksize=10000, dtype=None, method=None)
 
     # ------------------------------------------------------------------------------------------------------------------------------------
     # TO FIND OUT THE MAU (MARKS >= 1)
@@ -365,7 +407,6 @@ def my_func():
     table_name5 = 't_geniesmart_mau_gt0'
 
     df5 = results
-    df5 = df5.merge(results2, how='inner', on='student_id')
     df5['effective_date'] = pd.to_datetime(df5['effective_date'])
     df5 = df5[df5['date_submitted'] >= df5['effective_date']]  
     
@@ -373,14 +414,13 @@ def my_func():
     # df5['month'] = df5['date_submitted'].dt.month
     # df5['year'] = df5['date_submitted'].dt.year 
     df5['date'] = df5['date_submitted'].dt.strftime('%Y-%m')
-    # print(df5)
 
-    # TO FIND NUMBER OF USERS PER YEAR WEEK
-    df5 = df5.groupby(['date']).student_id.nunique().reset_index(name='number_of_users')
+    # TO FIND NUMBER OF USERS PER YEAR MONTH
+    df5 = df5.groupby(['date', 'name']).student_id.nunique().reset_index(name='number_of_users')
     df5['date'] = pd.to_datetime(df5['date'] ,format='%Y-%m')
     # print(df5)
 
-    df5.to_sql(name = table_name5, con = engine, schema=None, if_exists='append', index=None, index_label=None, chunksize=10000, dtype=None, method=None)
+    df5.to_sql(name = table_name5, con = dbConnection, schema=None, if_exists='append', index=None, index_label=None, chunksize=10000, dtype=None, method=None)
 
     # ------------------------------------------------------------------------------------------------------------------------------------
     # TO FIND OUT THE MAU (MARKS >= 20)
@@ -390,7 +430,6 @@ def my_func():
     table_name6 = 't_geniesmart_mau_gt19'
 
     df6 = results
-    df6 = df6.merge(results2, how='inner', on='student_id')
     df6['effective_date'] = pd.to_datetime(df6['effective_date'])
     df6 = df6[df6['date_submitted'] >= df6['effective_date']]  
     
@@ -398,19 +437,17 @@ def my_func():
     # df6['month'] = df6['date_submitted'].dt.month
     # df6['year'] = df6['date_submitted'].dt.year 
     df6['date'] = df6['date_submitted'].dt.strftime('%Y-%m')
-    # print(df6)
 
     # TO FIND THE INDIVIDUAL STUDENT MARKS
-    df6 = df6.groupby(['student_id', 'date']).max_marks.sum().reset_index(name='total_marks')
+    df6 = df6.groupby(['student_id', 'date', 'name']).max_marks.sum().reset_index(name='total_marks')
     df6 = df6[df6['total_marks'] >= 20] #THIS LINE OF CODE HELPS TO FILTER OUT THE STUDENTS THAT HAVE TOTAL MARKS >= 20
-    # print(df6)
 
     # TO FIND NUMBER OF USERS PER YEAR WEEK
-    df6 = df6.groupby(['date']).student_id.nunique().reset_index(name='number_of_users')
+    df6 = df6.groupby(['date', 'name']).student_id.nunique().reset_index(name='number_of_users')
     df6['date'] = pd.to_datetime(df6['date'] ,format='%Y-%m')
     # print(df6)
    
-    df6.to_sql(name = table_name6, con = engine, schema=None, if_exists='append', index=None, index_label=None, chunksize=10000, dtype=None, method=None)
+    df6.to_sql(name = table_name6, con = dbConnection, schema=None, if_exists='append', index=None, index_label=None, chunksize=10000, dtype=None, method=None)
     
     # ------------------------------------------------------------------------------------------------------------------------------------
     # TO FIND OUT THE AVERAGE TIME SPENT ON GENIESMART
@@ -422,47 +459,38 @@ def my_func():
     df7 = results
     df7['diff'] = df7.sort_values(['student_id','date_submitted']).groupby('student_id')['date_submitted'].diff()
     df7['diff'] = df7['diff'].dt.seconds
-    # df7 = df7.dropna(subset=['diff'])
-    # df7.drop(df7['diff'] , inplace=False)
     df7 = df7[df7['diff'] < 7200]  
-    
+
     #FILTERING ONLY EFFECTIVE STUDENTS
-    df7 = df7.merge(results2, how='inner', on='student_id')
     df7['effective_date'] = pd.to_datetime(df7['effective_date'])
     df7 = df7[df7['date_submitted'] >= df7['effective_date']]  
+    
+    # GETTING COUNTRY WITH THEIR TOTAL TIME
+    df7 = df7.groupby(['name'])['diff'].sum().reset_index(name='total_time')
+
+    # GETTING NUMBER OF USERS
+    df7 = df7.merge(df5, how='inner', on='name')
+
+    # GETTING AVG USER TIME
+    df7['avg_user_time'] = df7['total_time'] / df7['number_of_users']
+    df7['date'] = start
+
     # print(df7)
-
-    #GETTING SESSION TIMES
-    total_time = df7['diff'].sum()
-    # print('total_time: ' + str(total_time))
-
-    number_of_users = df5.iloc[0, 1]
-    # print(number_of_users)
-
-    avg_user_time = total_time / number_of_users
-    # print('average user time: ' + str(avg_user_time))
-
-    geniesmart_time = {"date": [start],
-                        "total_time": [total_time],
-                        "number_of_users": [number_of_users],
-                        "avg_user_time": [avg_user_time]}
-
-    DataFrame = pd.DataFrame(data=geniesmart_time)
-    print(DataFrame)
-
-    DataFrame.to_sql(name = table_name7, con = engine, schema=None, if_exists='append', index=None, index_label=None, chunksize=10000, dtype=None, method=None)
    
-    print(f"successfully upload onto table for date_submitted start {start} to date_submitted end {end}.")
-
+    df7.to_sql(name = table_name7, con = dbConnection, schema=None, if_exists='append', index=None, index_label=None, chunksize=10000, dtype=None, method=None)
+   
     #CLOSE CONNECTION
     dbConnection.close()
+    dbConnection2.close()
+   
+    print(f"successfully upload onto table for date_submitted start {start} to date_submitted end {end}.")
 
 
 default_args = {
     'owner': 'Jonathan',
 }
 
-with DAG('GenieSmart', default_args=default_args, description='GenieSmart', schedule_interval='@daily', start_date=datetime(2021, 6, 21), catchup=False) as dag:
+with DAG('GenieSmart', default_args=default_args, description='GenieSmart', schedule_interval='@daily', start_date=datetime(2021, 7, 21), catchup=False) as dag:
     update_effective_students = PythonOperator(task_id='update_effective_students', python_callable=update_effective_students)
     delete_data_tswa = PythonOperator(task_id='delete_data_tswa', python_callable=delete_data_tswa)
     update_data_tswa = PythonOperator(task_id='update_data_tswa', python_callable=update_data_tswa)
