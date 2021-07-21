@@ -118,13 +118,15 @@ def genieask():
 
     # REFORMATTING THE DATA TO SEPARATE OUT THE WEEK AND YEAR
     df4['date_time'] = pd.to_datetime(df4['date_time'])
-    df4['week_number'] = df4['date_time'].dt.isocalendar().week
-    df4['year'] = df4['date_time'].dt.isocalendar().year 
+    # df4['week_number'] = df4['date_time'].dt.isocalendar().week
+    # df4['year'] = df4['date_time'].dt.isocalendar().year 
+    df4['year_week'] = df4['date_time'].dt.strftime('%Y-%U')
 
     # TO FIND THE USER AND THE YEAR WEEK THAT THEY ARE ACTIVE IN
-    df4 = df4.groupby(['user_id', 'week_number', 'year']).agg({'date_time' : 'min'}).reset_index().rename(columns={'date_time' : 'earliest_date_submitted'})
-    
-    # print(df4)
+    df4 = df4.groupby(['user_id', 'year_week']).agg({'date_time' : 'min'}).reset_index().rename(columns={'date_time' : 'earliest_date_submitted'})
+    df4['earliest_date_submitted'] = df4['earliest_date_submitted'].dt.date
+
+    print(df4)
     df4.to_sql(name = table_name4, con = dbConnection, schema=None, if_exists='replace', index=None, index_label=None, chunksize=10000, dtype=None, method=None)
 
     # ------------------------------------------------------------------------------------------------------------------------------------  
